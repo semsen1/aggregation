@@ -28,7 +28,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
-          cache-dependency-path: go.sum
+          cache: false
       - name: Download modules
         run: go mod download
       - name: Verify go.mod/go.sum
@@ -75,6 +75,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
