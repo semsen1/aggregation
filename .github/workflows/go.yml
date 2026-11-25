@@ -1,0 +1,82 @@
+name: Go
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    name: Test (go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.21','1.22', '1.23']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: go.sum
+      - name: Download modules
+        run: go mod download
+      - name: Verify go.mod/go.sum
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: gofmt check
+        run: |
+          diff=$(gofmt -s -l .)
+          if [ -n "$diff" ]; then
+            echo "Не отформатировано (gofmt -s -w .):"
+            echo "$diff"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: Tests (race + coverage)
+        run: |
+          go test ./... \
+            -race \
+            -count=1 \
+            -shuffle=on \
+            -covermode=atomic \
+            -coverprofile=coverage.out \
+            -timeout=10m
+      - name: Coverage summary
+        if: matrix.go == '1.23'
+        run: |
+          go tool cover -func=coverage.out | tail -n 1
+          go tool cover -func=coverage.out >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage artifact
+        if: matrix.go == '1.23'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
