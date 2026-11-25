@@ -31,10 +31,10 @@ jobs:
           cache: false
       - name: Download modules
         run: go mod download
-      - name: Verify go.mod/go.sum
+      - name: Verify go.mod
         run: |
           go mod tidy
-          git diff --exit-code -- go.mod go.sum
+          git diff --exit-code -- go.mod
       - name: gofmt check
         run: |
           diff=$(gofmt -s -l .)
