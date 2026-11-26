@@ -77,6 +77,7 @@ const (
 type Config struct {
 	Digits int // -1 means "do not round"
 	NaN    NaNPolicy
+	Err    error
 }
 
 var DefaultConfig = Config{Digits: -1, NaN: NaNPropagate}
@@ -92,10 +93,18 @@ type Option func(*Config)
 // A negative value disables rounding and returns the full float64 result,
 // which is also the default. Values above MaxPrecision yield ErrPrecision.
 func WithPrecision(digits int) Option {
-	if digits < 0 {
-		digits = -1
+	return func(c *Config) {
+		if c.Err != nil {
+			return
+		}
+
+		if digits < -1 || digits > MaxPrecision {
+			c.Err = fmt.Errorf("avg: precision %d out of range [-1, %d]: %w",
+				digits, MaxPrecision, ErrPrecision)
+			return
+		}
+		c.Digits = digits
 	}
-	return func(c *Config) { c.Digits = digits }
 }
 
 // WithNaNPolicy selects how NaN values in floating-point input are handled.
@@ -113,11 +122,14 @@ func BuildConfig(opts []Option) (Config, error) {
 			o(&c)
 		}
 	}
+	if c.Err != nil {
+		return Config{}, c.Err
+	}
 	if c.Digits < -1 || c.Digits > MaxPrecision {
-		return c, fmt.Errorf("%w: %d", ErrPrecision, c.Digits)
+		return Config{}, fmt.Errorf("%w: %d", ErrPrecision, c.Digits)
 	}
 	if c.NaN < NaNPropagate || c.NaN > NaNError {
-		return c, fmt.Errorf("%w: %d", ErrNaNPolicy, c.NaN)
+		return Config{}, fmt.Errorf("%w: %d", ErrNaNPolicy, c.NaN)
 	}
 	return c, nil
 }
@@ -324,4 +336,15 @@ func RoundTo(x float64, digits int) float64 {
 		return x
 	}
 	return math.Round(scaled) / p
+}
+
+// IntegerAvg divides an exact integer total by n using big.Rat when the total
+// has left int64, so the mean is correctly rounded.
+func IntegerAvg(acc int64, bigAcc *big.Int, n uint64) float64 {
+	if bigAcc == nil {
+		return float64(acc) / float64(n)
+	}
+	r := new(big.Rat).SetFrac(bigAcc, new(big.Int).SetUint64(n))
+	f, _ := r.Float64()
+	return f
 }
